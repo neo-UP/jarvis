@@ -101,6 +101,7 @@ def clean_for_speech(text: str) -> str:
     text = re.sub(r"https?://\S+", "o link", text)
     text = re.sub(r"^\s*(?:[-•*]|\d+\.)\s+", "", text, flags=re.M)
     text = re.sub(r"[*_#`>|~]", "", text)
+    text = re.sub("[\U0001F000-\U0001FAFF☀-➿️‍]", "", text)  # emojis não são lidos
     return re.sub(r"\s+", " ", text).strip()
 
 

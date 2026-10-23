@@ -25,6 +25,7 @@ def _get(name: str, default: str = "") -> str:
 @dataclass
 class Config:
     name: str
+    theme: str
     wake_word: bool
     autonomy: str
     followup_seconds: float
@@ -51,6 +52,7 @@ def load_config() -> Config:
     load_dotenv(ENV_PATH, override=True)
     return Config(
         name=_get("JARVIS_NOME_ASSISTENTE", "VEKTOR").upper(),
+        theme=_get("JARVIS_TEMA", "tron").lower(),
         wake_word=_get("JARVIS_ESCUTA_CONTINUA", "1") not in ("0", "nao", "não", "false"),
         autonomy=_get("JARVIS_AUTONOMIA", "total").lower(),
         followup_seconds=float(_get("JARVIS_ESPERA_RESPOSTA_SEGUNDOS", "8")),

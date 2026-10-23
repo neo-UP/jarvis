@@ -105,3 +105,7 @@ def test_segredos_do_env(monkeypatch):
     monkeypatch.setenv("TELEGRAM_TOKEN", "123:abc")
     assert expand_secrets("https://api.telegram.org/bot${TELEGRAM_TOKEN}/send") == "https://api.telegram.org/bot123:abc/send"
     assert expand_secrets("${NAO_EXISTE}") == "${NAO_EXISTE}"
+
+
+def test_emojis_nao_vao_para_a_voz():
+    assert clean_for_speech("Claro! 😊 Pode deixar 👍🏽") == "Claro! Pode deixar"

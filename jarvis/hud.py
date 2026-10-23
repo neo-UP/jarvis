@@ -1,10 +1,11 @@
-"""Interface HUD: reator animado, painéis de sistema, legendas e entrada de texto."""
+"""Interface HUD: rosto TRON ou reator animado, painéis de sistema, legendas e entrada de texto."""
 from __future__ import annotations
 
 import ctypes
 import math
 import time
 from collections import deque
+from pathlib import Path
 from datetime import datetime
 
 import psutil
@@ -14,7 +15,9 @@ from PyQt6.QtGui import (
     QColor,
     QConicalGradient,
     QFont,
+    QFontDatabase,
     QKeySequence,
+    QLinearGradient,
     QPainter,
     QPainterPath,
     QPen,
@@ -25,6 +28,9 @@ from PyQt6.QtWidgets import QInputDialog, QLineEdit, QMessageBox, QWidget
 
 from .assistant import Assistant
 from .config import Config
+from .tron import TronScene
+
+ASSETS = Path(__file__).resolve().parent / "assets"
 
 STATES = {
     "inicializando": ("INICIALIZANDO", QColor(0, 150, 255), 0.6),
@@ -36,6 +42,20 @@ STATES = {
     "falando": ("FALANDO", QColor(70, 210, 255), 1.4),
     "erro": ("ERRO", QColor(255, 60, 60), 0.5),
 }
+
+# Paleta TRON: ciano para o normal, laranja (as cores do Clu) quando ele pensa e age.
+TRON_COLORS = {
+    "inicializando": QColor(0, 160, 255),
+    "pronto": QColor(0, 229, 255),
+    "ouvindo": QColor(150, 250, 255),
+    "processando": QColor(255, 150, 0),
+    "executando": QColor(255, 106, 0),
+    "aguardando": QColor(255, 211, 0),
+    "falando": QColor(0, 229, 255),
+    "erro": QColor(255, 42, 42),
+}
+
+FONT_FAMILY = "Segoe UI"
 
 MONTHS = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"]
 
@@ -55,7 +75,7 @@ def lerp_color(a: QColor, b: QColor, t: float) -> QColor:
 
 
 def hud_font(size: float, bold: bool = False, spacing: float = 2.0) -> QFont:
-    f = QFont("Segoe UI", 10)
+    f = QFont(FONT_FAMILY, 10)
     f.setPointSizeF(size)
     f.setWeight(QFont.Weight.DemiBold if bold else QFont.Weight.Normal)
     f.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, spacing)
@@ -85,14 +105,28 @@ class Hud(QWidget):
         self.cpu = self.ram = self.disk = 0.0
         self.center = QPointF()
         self.radius = 100.0
+        self.tron = TronScene() if cfg.theme == "tron" else None
+        if self.tron:
+            global FONT_FAMILY
+            font_id = QFontDatabase.addApplicationFont(str(ASSETS / "Orbitron.ttf"))
+            families = QFontDatabase.applicationFontFamilies(font_id) if font_id >= 0 else []
+            if families:
+                FONT_FAMILY = families[0]
 
         self.input = QLineEdit(self)
         self.input.setPlaceholderText("Digite um comando e pressione Enter…")
-        self.input.setStyleSheet(
-            "QLineEdit { background: rgba(0, 25, 40, 190); color: #c8f4ff; border: 1px solid rgba(0, 200, 255, 110);"
-            " border-radius: 4px; padding: 9px 12px; font: 11pt 'Consolas'; selection-background-color: #0088aa; }"
-            "QLineEdit:focus { border: 1px solid rgba(0, 220, 255, 220); }"
-        )
+        if self.tron:
+            self.input.setStyleSheet(
+                "QLineEdit { background: rgba(0, 8, 14, 220); color: #b8fbff; border: 1px solid rgba(0, 229, 255, 150);"
+                " border-radius: 0px; padding: 9px 14px; font: 11pt 'Consolas'; selection-background-color: #007a8a; }"
+                "QLineEdit:focus { border: 1px solid #00e5ff; }"
+            )
+        else:
+            self.input.setStyleSheet(
+                "QLineEdit { background: rgba(0, 25, 40, 190); color: #c8f4ff; border: 1px solid rgba(0, 200, 255, 110);"
+                " border-radius: 4px; padding: 9px 12px; font: 11pt 'Consolas'; selection-background-color: #0088aa; }"
+                "QLineEdit:focus { border: 1px solid rgba(0, 220, 255, 220); }"
+            )
         self.input.returnPressed.connect(self._submit)
 
         QShortcut(QKeySequence("Escape"), self, self._escape)
@@ -109,7 +143,7 @@ class Hud(QWidget):
         assistant.confirm_answered.connect(self._on_confirm_answered)
         assistant.key_missing.connect(self.ask_api_key)
 
-        self._frame = QTimer(self, interval=16, timeout=self._tick)
+        self._frame = QTimer(self, interval=33, timeout=self._tick)  # 30 quadros/s: sobra CPU para o modelo local
         self._frame.start()
         self._stats = QTimer(self, interval=1000, timeout=self._update_stats)
         self._stats.start()
@@ -215,9 +249,13 @@ class Hud(QWidget):
         dt = min(0.1, now - self.last_tick)
         self.last_tick = now
         _, target, speed = STATES.get(self.state, STATES["pronto"])
+        if self.tron:
+            target = TRON_COLORS.get(self.state, TRON_COLORS["pronto"])
         self.color = lerp_color(self.color, target, min(1.0, dt * 6))
         self.level += (self.level_target - self.level) * min(1.0, dt * 14)
         self.spin += dt * 30 * speed
+        if self.tron:
+            self.tron.update(dt, self.state, self.level, speed)
         self.update()
 
     def _update_stats(self) -> None:
@@ -234,6 +272,10 @@ class Hud(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         w, h = self.width(), self.height()
         t = time.monotonic() - self.t0
+        if self.tron:
+            self._paint_tron(p, w, h)
+            p.end()
+            return
 
         bg = QRadialGradient(QPointF(w / 2, h / 2), max(w, h) * 0.7)
         bg.setColorAt(0, QColor(4, 22, 34))
@@ -251,6 +293,34 @@ class Hud(QWidget):
             self._draw_activity_panel(p, QRectF(w - 318, 110, 290, 250))
         self._draw_subtitles(p, w, h)
         p.end()
+
+    def _paint_tron(self, p: QPainter, w: int, h: int) -> None:
+        # Rosto entre o cabeçalho e as legendas, com a onda de áudio e o estado logo abaixo do queixo.
+        top, subtitles = 100, h - 180
+        scale = max(50.0, min(w * 0.17, (subtitles - top - 80) / 2.15))
+        cx, cy = w / 2, top + scale * 1.02
+        horizon = min(h * 0.72, cy + scale * 1.0)
+        self.tron.paint_background(p, w, h, horizon, self.color)
+        self.center, self.radius = QPointF(cx, cy), scale * 1.1
+        self.tron.paint_face(p, cx, cy, scale, self.color, self.level)
+        wave_y = cy + scale * 1.2 + 14
+        self.tron.paint_waveform(p, cx, wave_y, scale * 2.0, self.color)
+        label, _, _ = STATES.get(self.state, STATES["pronto"])
+        p.setPen(alpha(self.color, 0.95))
+        p.setFont(hud_font(max(8, scale * 0.06), True, 6))
+        p.drawText(QRectF(cx - 300, wave_y + 14, 600, 26), Qt.AlignmentFlag.AlignCenter, label)
+        # Fundo escuro atrás das legendas para elas não brigarem com o piso.
+        shade = QLinearGradient(0, h - 200, 0, h)
+        shade.setColorAt(0, QColor(0, 0, 0, 0))
+        shade.setColorAt(0.35, QColor(0, 0, 0, 170))
+        shade.setColorAt(1, QColor(0, 0, 0, 230))
+        p.fillRect(QRectF(0, h - 200, w, 200), shade)
+        self._draw_header(p, w)
+        if w >= 980:
+            self._draw_system_panel(p, QRectF(28, 110, 230, 180))
+            self._draw_activity_panel(p, QRectF(w - 318, 110, 290, 250))
+        self._draw_subtitles(p, w, h)
+        self.tron.paint_scanlines(p, w, h)
 
     def _draw_grid(self, p: QPainter, w: int, h: int) -> None:
         p.setPen(QPen(alpha(self.color, 0.045), 1))
@@ -373,6 +443,22 @@ class Hud(QWidget):
         p.drawText(QRectF(c.x() - R, c.y() + R * 0.04, 2 * R, R * 0.1), Qt.AlignmentFlag.AlignCenter, label)
 
     def _corners(self, p: QPainter, r: QRectF, size: float = 14) -> None:
+        if self.tron:
+            # Painel com cantos cortados, estilo TRON.
+            c = size
+            path = QPainterPath()
+            path.moveTo(r.left() + c, r.top())
+            path.lineTo(r.right(), r.top())
+            path.lineTo(r.right(), r.bottom() - c)
+            path.lineTo(r.right() - c, r.bottom())
+            path.lineTo(r.left(), r.bottom())
+            path.lineTo(r.left(), r.top() + c)
+            path.closeSubpath()
+            p.fillPath(path, QColor(0, 6, 12, 200))
+            for wd, al in ((5, 0.12), (1.4, 0.9)):
+                p.setPen(QPen(alpha(self.color, al), wd))
+                p.drawPath(path)
+            return
         p.setPen(QPen(alpha(self.color, 0.8), 2))
         for x, y, dx, dy in (
             (r.left(), r.top(), 1, 1),
@@ -475,5 +561,6 @@ class Hud(QWidget):
             QRectF(0, h - 100, w, 20),
             Qt.AlignmentFlag.AlignCenter,
             (f'DIGA "{self.cfg.name}"  ·  ' if self.cfg.wake_word else "")
-            + f"{self.cfg.hotkey.upper()} OU CLIQUE NO REATOR  ·  ESC PARA PARAR  ·  F11 TELA CHEIA  ·  CTRL+N NOVA CONVERSA",
+            + f"{self.cfg.hotkey.upper()} OU CLIQUE {'NO ROSTO' if self.tron else 'NO REATOR'}  ·  ESC PARA PARAR"
+            + "  ·  F11 TELA CHEIA  ·  CTRL+N NOVA CONVERSA",
         )

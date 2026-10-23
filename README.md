@@ -1,8 +1,8 @@
 # V.E.K.T.O.R
 
 Assistente de voz em português para Windows. O cérebro é um modelo local e gratuito no Ollama
-(ou o Claude, da Anthropic, se preferir), a interface é um HUD
-animado de reator e ele age no seu PC: abre programas, pesquisa na web, vê a tela, clica, digita,
+(ou o Claude, da Anthropic, se preferir). A interface tem estilo TRON: um rosto 3D feito de bits que
+fala, pisca e muda de cor conforme o que está fazendo (`JARVIS_TEMA=reator` volta ao anel antigo). Ele age no seu PC: abre programas, pesquisa na web, vê a tela, clica, digita,
 roda PowerShell, cria arquivos e sites.
 
 ## Instalação
@@ -57,7 +57,8 @@ pelo assistente ficam em `workspace/`, a memória em `dados/memoria.json` e os l
 
 ```
 jarvis/
-  hud.py        interface do reator
+  hud.py        janela, painéis e legendas
+  tron.py       tema TRON: rosto de bits, piso em grade e motos de luz
   assistant.py  ciclo ouvir → transcrever → pensar → agir → falar
   brain.py      cérebro Claude e prompt de sistema
   brain_ollama.py  cérebro local (Ollama)
