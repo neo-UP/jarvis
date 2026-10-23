@@ -1,0 +1,16 @@
+anthropic>=2.0
+PyQt6>=6.6
+sounddevice>=0.4.6
+numpy>=1.26
+faster-whisper>=1.0
+# av 16+ quebra o faster-whisper; o Jarvis usa o av para decodificar a voz do TTS
+av>=12,<16
+edge-tts>=6.1
+mss>=9.0
+Pillow>=10.0
+keyboard>=0.13.5
+psutil>=5.9
+python-dotenv>=1.0
+ddgs>=9.0
+mcp>=2.0
+mcp-server-time>=0.6
